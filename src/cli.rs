@@ -2,6 +2,7 @@ use std::convert::TryFrom;
 
 use anyhow::{anyhow, bail, Error, Result};
 use serde::{Deserialize, Serialize};
+use std::io::IsTerminal;
 use tpm2_policy::TPMPolicyStep;
 
 use crate::utils::get_authorized_policy_step;
@@ -209,7 +210,7 @@ pub(super) fn get_mode_and_cfg(args: &[String]) -> Result<(ActionMode, Option<TP
     if args.len() > 1 && args[1] == "--help" {
         return Ok((ActionMode::Help, None));
     }
-    if atty::is(atty::Stream::Stdin) {
+    if std::io::stdin().is_terminal() {
         return Ok((ActionMode::Help, None));
     }
     let (mode, cfgstr) = if args[0].contains("encrypt") && args.len() >= 2 {
