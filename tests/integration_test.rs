@@ -158,28 +158,28 @@ fn pcr_tests() {
                 eprintln!("\tStarting encrypter");
                 let encrypted = (encrypt_fn.func)(INPUT, config);
                 if let Err(e) = encrypted {
-                    eprintln!("FAILED: error: {:?}", e);
+                    eprintln!("FAILED: error: {e:?}");
                     failed += 1;
                     continue;
                 }
                 let encrypted = encrypted.unwrap();
                 eprintln!("\tStarting checker");
                 if let Err(e) = checker(&encrypted) {
-                    eprintln!("FAILED: error: {:?}", e);
+                    eprintln!("FAILED: error: {e:?}");
                     failed += 1;
                     continue;
                 }
                 eprintln!("\tStarting decrypter");
                 let decrypted = (decrypt_fn.func)(&encrypted);
                 if let Err(e) = decrypted {
-                    eprintln!("FAILED: error: {:?}", e);
+                    eprintln!("FAILED: error: {e:?}");
                     failed += 1;
                     continue;
                 }
                 let decrypted = decrypted.unwrap();
                 eprintln!("\tStarting contents checker");
                 if decrypted != INPUT {
-                    eprintln!("FAILED: '{}' (input) != '{}' (decrypted)", INPUT, decrypted);
+                    eprintln!("FAILED: '{INPUT}' (input) != '{decrypted}' (decrypted)");
                     failed += 1;
                     continue;
                 }

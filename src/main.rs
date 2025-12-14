@@ -264,7 +264,7 @@ fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
     let (mode, cfg) = match cli::get_mode_and_cfg(&args) {
         Err(e) => {
-            eprintln!("Error during parsing operation: {}", e);
+            eprintln!("Error during parsing operation: {e}");
             std::process::exit(1);
         }
         Ok((mode, cfg)) => (mode, cfg),
@@ -284,7 +284,7 @@ fn main() -> Result<()> {
 
     let mut input = Vec::new();
     if let Err(e) = io::stdin().read_to_end(&mut input) {
-        eprintln!("Error getting input token: {}", e);
+        eprintln!("Error getting input token: {e}");
         std::process::exit(1);
     }
 
