@@ -1,4 +1,8 @@
 #!/bin/bash
+# SPDX-FileCopyrightText: 2021 Red Hat, Inc.
+#
+# SPDX-License-Identifier: MIT
+
 cargo build || (echo "Failed to build"; exit 1)
 (
 	cd ../clevis-pin-tpm2-signtool

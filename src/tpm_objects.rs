@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2021 Red Hat, Inc.
+//
+// SPDX-License-Identifier: MIT
+
 use std::convert::TryFrom;
 
 use anyhow::{anyhow, bail, Context, Result};

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2021 Red Hat, Inc.
+#
+# SPDX-License-Identifier: MIT
+
 [package]
 name = "clevis-pin-tpm2"
 version = "0.5.3"

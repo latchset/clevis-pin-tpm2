@@ -1,4 +1,7 @@
 #!/bin/sh
+# SPDX-FileCopyrightText: 2021 Red Hat, Inc.
+#
+# SPDX-License-Identifier: MIT
 
 die() {
     echo "ERROR: ${1}" >&2

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2021 Red Hat, Inc.
+//
+// SPDX-License-Identifier: MIT
+
 use std::{io::Write, os::unix::process::CommandExt, process::Command};
 
 use anyhow::{bail, Context, Result};
