@@ -1,0 +1,21 @@
+version = 1
+
+[[annotations]]
+path = [
+  "README.md",
+  "Cargo.lock",
+]
+SPDX-FileCopyrightText = [
+    "2021 Red Hat, Inc."
+]
+SPDX-License-Identifier = "MIT"
+
+[[annotations]]
+path = [
+  "tests/policy_broken.yaml",
+  "tests/policy_working.yaml",
+]
+SPDX-FileCopyrightText = [
+    "2021 Red Hat, Inc."
+]
+SPDX-License-Identifier = "MIT"

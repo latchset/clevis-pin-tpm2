@@ -1,6 +1,7 @@
-// Copyright 2020 Patrick Uiterwijk
+// SPDX-FileCopyrightText: 2020 Patrick Uiterwijk
+// SPDX-FileCopyrightText: 2021 Red Hat, Inc.
 //
-// Licensed under the MIT license
+// SPDX-License-Identifier: MIT
 
 use std::convert::{TryFrom, TryInto};
 use std::env;
