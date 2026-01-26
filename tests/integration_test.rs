@@ -8,10 +8,12 @@ use anyhow::{bail, Context, Result};
 
 type CheckFunction = dyn Fn(&str) -> Result<()>;
 struct EncryptFunc {
+    #[allow(clippy::type_complexity)]
     func: Box<dyn Fn(&str, &str) -> Result<String>>,
     name: &'static str,
 }
 struct DecryptFunc {
+    #[allow(clippy::type_complexity)]
     func: Box<dyn Fn(&str) -> Result<String>>,
     name: &'static str,
 }
