@@ -1,48 +1,59 @@
 # SPDX-FileCopyrightText: 2021 Red Hat, Inc.
 #
 # SPDX-License-Identifier: MIT
+#
+# Inspired by https://github.com/coreos/repo-templates
 
-name: Continuous Integration
-on: [push, pull_request]
+name: "Rust"
+on:
+  pull_request:
+    branches:
+      - "main"
+permissions:
+  contents: "read"
+
+# Don't waste job slots on superseded code
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # Pinned toolchain for linting
+  ACTIONS_LINTS_TOOLCHAIN: 1.90.0
+
 jobs:
-  formatting:
-    name: Check formatting
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Check formatting
-        run: cargo fmt --all -- --check
-
-  tests:
-    name: Perform tests
-    runs-on: ubuntu-latest
-    container: fedora:latest
+  tests-stable:
+    name: "Tests, stable toolchain"
+    runs-on: "ubuntu-24.04"
+    container: "ghcr.io/trusted-execution-clusters/buildroot:fedora"
     defaults:
       run:
         working-directory: ./clevis-pin-tpm2
     steps:
-      - uses: actions/checkout@v4
+      - name: "Check out repository"
+        uses: actions/checkout@v5
         with:
           path: clevis-pin-tpm2
-      - name: Check out the policy signtool
+      - name: "Install dependencies"
+        run: dnf install -y tpm2-tss-devel clang-devel swtpm swtpm-tools
+      - name: "Install toolchain"
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: stable
+      - name: "Cache build artifacts"
+        uses: Swatinem/rust-cache@v2
+      - name: "cargo build"
+        run: cargo build --all-targets
+      - name: "Check out the policy signtool"
         uses: actions/checkout@v4
         with:
           path: clevis-pin-tpm2-signtool
           repository: puiterwijk/clevis-pin-tpm2-signtool
-      - name: Install dependencies
-        run: |
-            dnf install -y \
-                tpm2-tss-devel clevis \
-                swtpm swtpm-tools \
-                rust cargo clippy \
-                golang clang-devel \
-                git-core
-      - name: Remove clevis-pin-tpm2
+      - name: "Remove clevis-pin-tpm2"
         run: |
             rm -f /usr/bin/clevis-pin-tpm2 /usr/bin/clevis-*-tpm2plus
-      - name: Build
-        run: cargo build
-      - name: Start swtpm
+      - name: "Start swtpm"
         run: |
             mkdir /tmp/tpmdir
             swtpm_setup --tpm2 \
@@ -57,13 +68,200 @@ jobs:
                 --ctrl type=tcp,port=2322 \
                 --server type=tcp,port=2321 \
                 --daemon
-      - name: Run integration tests
+      - name: "Run integration tests"
         run: |
-            TCTI=swtpm: SKIP_CLEVIS=true cargo test -- --nocapture
+            TCTI=swtpm: SKIP_CLEVIS=true cargo test --all-targets -- --nocapture
             echo "### Shell integration tests" >&2
             TCTI=swtpm: SKIP_CLEVIS=true ./tests/integration-test.sh
-      - name: Run policy tests
+      - name: "Run policy tests"
         run: |
             TCTI=swtpm: ./tests/test_policy
-      - name: Run clippy
-        run: cargo clippy -- -D warnings
+  tests-release-stable:
+    name: "Tests (release), stable toolchain"
+    runs-on: "ubuntu-24.04"
+    container: "ghcr.io/trusted-execution-clusters/buildroot:latest"
+    defaults:
+      run:
+        working-directory: ./clevis-pin-tpm2
+    steps:
+      - name: "Check out repository"
+        uses: actions/checkout@v5
+        with:
+          path: clevis-pin-tpm2
+      - name: "Install dependencies"
+        run: dnf install -y tpm2-tss-devel clang-devel swtpm swtpm-tools
+      - name: "Install toolchain"
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: stable
+      - name: "Cache build artifacts"
+        uses: Swatinem/rust-cache@v2
+      - name: "cargo build (release)"
+        run: cargo build --all-targets --release
+      - name: "Check out the policy signtool"
+        uses: actions/checkout@v4
+        with:
+          path: clevis-pin-tpm2-signtool
+          repository: puiterwijk/clevis-pin-tpm2-signtool
+      - name: "Remove clevis-pin-tpm2"
+        run: |
+            rm -f /usr/bin/clevis-pin-tpm2 /usr/bin/clevis-*-tpm2plus
+      - name: "Start swtpm"
+        run: |
+            mkdir /tmp/tpmdir
+            swtpm_setup --tpm2 \
+                --tpmstate /tmp/tpmdir \
+                --createek --decryption --create-ek-cert \
+                --create-platform-cert \
+                --pcr-banks sha1,sha256 \
+                --display
+            swtpm socket --tpm2 \
+                --tpmstate dir=/tmp/tpmdir \
+                --flags startup-clear \
+                --ctrl type=tcp,port=2322 \
+                --server type=tcp,port=2321 \
+                --daemon
+      - name: "Run integration tests"
+        run: |
+            TCTI=swtpm: SKIP_CLEVIS=true cargo test --all-targets --release -- --nocapture
+            echo "### Shell integration tests" >&2
+            TCTI=swtpm: SKIP_CLEVIS=true ./tests/integration-test.sh
+      - name: "Run policy tests"
+        run: |
+            TCTI=swtpm: ./tests/test_policy
+  tests-release-msrv:
+    name: "Tests (release), minimum supported toolchain"
+    runs-on: "ubuntu-24.04"
+    container: "ghcr.io/trusted-execution-clusters/buildroot:latest"
+    defaults:
+      run:
+        working-directory: ./clevis-pin-tpm2
+    steps:
+      - name: "Check out repository"
+        uses: actions/checkout@v5
+        with:
+          path: clevis-pin-tpm2
+      - name: "Install dependencies"
+        run: dnf install -y tpm2-tss-devel clang-devel swtpm swtpm-tools
+      - name: "Detect crate MSRV"
+        run: |
+          msrv=$(cargo metadata --format-version 1 --no-deps | \
+              jq -r '.packages[0].rust_version')
+          echo "Crate MSRV: $msrv"
+          echo "MSRV=$msrv" >> $GITHUB_ENV
+      - name: "Install toolchain"
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: ${{ env.MSRV }}
+      - name: "Cache build artifacts"
+        uses: Swatinem/rust-cache@v2
+      - name: "cargo build (release)"
+        run: cargo build --all-targets --release
+      - name: "Check out the policy signtool"
+        uses: actions/checkout@v4
+        with:
+          path: clevis-pin-tpm2-signtool
+          repository: puiterwijk/clevis-pin-tpm2-signtool
+      - name: "Remove clevis-pin-tpm2"
+        run: |
+            rm -f /usr/bin/clevis-pin-tpm2 /usr/bin/clevis-*-tpm2plus
+      - name: "Start swtpm"
+        run: |
+            mkdir /tmp/tpmdir
+            swtpm_setup --tpm2 \
+                --tpmstate /tmp/tpmdir \
+                --createek --decryption --create-ek-cert \
+                --create-platform-cert \
+                --pcr-banks sha1,sha256 \
+                --display
+            swtpm socket --tpm2 \
+                --tpmstate dir=/tmp/tpmdir \
+                --flags startup-clear \
+                --ctrl type=tcp,port=2322 \
+                --server type=tcp,port=2321 \
+                --daemon
+      - name: "Run integration tests"
+        run: |
+            TCTI=swtpm: SKIP_CLEVIS=true cargo test --all-targets --release -- --nocapture
+            echo "### Shell integration tests" >&2
+            TCTI=swtpm: SKIP_CLEVIS=true ./tests/integration-test.sh
+      - name: "Run policy tests"
+        run: |
+            TCTI=swtpm: ./tests/test_policy
+  linting:
+    name: "Lints, pinned toolchain"
+    runs-on: "ubuntu-24.04"
+    container: "ghcr.io/trusted-execution-clusters/buildroot:latest"
+    steps:
+      - name: "Check out repository"
+        uses: actions/checkout@v5
+      - name: "Install dependencies"
+        run: dnf install -y tpm2-tss-devel clang-devel
+      - name: "Install toolchain"
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: ${{ env.ACTIONS_LINTS_TOOLCHAIN }}
+          components: rustfmt, clippy
+      - name: "Cache build artifacts"
+        uses: Swatinem/rust-cache@v2
+      - name: "cargo fmt (check)"
+        run: cargo fmt -- --check -l
+      - name: "cargo clippy (warnings)"
+        run: cargo clippy --all-targets -- -D warnings
+  tests-other-channels:
+    name: "Tests, unstable toolchain"
+    runs-on: "ubuntu-24.04"
+    container: "ghcr.io/trusted-execution-clusters/buildroot:latest"
+    defaults:
+      run:
+        working-directory: ./clevis-pin-tpm2
+    continue-on-error: true
+    strategy:
+      matrix:
+        channel: [beta, nightly]
+    steps:
+      - name: "Check out repository"
+        uses: actions/checkout@v5
+        with:
+          path: clevis-pin-tpm2
+      - name: "Install dependencies"
+        run: dnf install -y tpm2-tss-devel clang-devel swtpm swtpm-tools
+      - name: "Install toolchain"
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: ${{ matrix.channel }}
+      - name: "Cache build artifacts"
+        uses: Swatinem/rust-cache@v2
+      - name: "cargo build"
+        run: cargo build --all-targets
+      - name: "Check out the policy signtool"
+        uses: actions/checkout@v4
+        with:
+          path: clevis-pin-tpm2-signtool
+          repository: puiterwijk/clevis-pin-tpm2-signtool
+      - name: "Remove clevis-pin-tpm2"
+        run: |
+            rm -f /usr/bin/clevis-pin-tpm2 /usr/bin/clevis-*-tpm2plus
+      - name: "Start swtpm"
+        run: |
+            mkdir /tmp/tpmdir
+            swtpm_setup --tpm2 \
+                --tpmstate /tmp/tpmdir \
+                --createek --decryption --create-ek-cert \
+                --create-platform-cert \
+                --pcr-banks sha1,sha256 \
+                --display
+            swtpm socket --tpm2 \
+                --tpmstate dir=/tmp/tpmdir \
+                --flags startup-clear \
+                --ctrl type=tcp,port=2322 \
+                --server type=tcp,port=2321 \
+                --daemon
+      - name: "Run integration tests"
+        run: |
+            TCTI=swtpm: SKIP_CLEVIS=true cargo test --all-targets -- --nocapture
+            echo "### Shell integration tests" >&2
+            TCTI=swtpm: SKIP_CLEVIS=true ./tests/integration-test.sh
+      - name: "Run policy tests"
+        run: |
+            TCTI=swtpm: ./tests/test_policy

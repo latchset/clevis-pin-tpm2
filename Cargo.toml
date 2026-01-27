@@ -10,6 +10,7 @@ authors = ["Patrick Uiterwijk <patrick@puiterwijk.org>"]
 edition = "2018"
 homepage = "https://github.com/fedora-iot/clevis-pin-tpm2"
 license = "MIT"
+rust-version = "1.90.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

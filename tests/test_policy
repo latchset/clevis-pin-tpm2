@@ -3,7 +3,22 @@
 #
 # SPDX-License-Identifier: MIT
 
-cargo build || (echo "Failed to build"; exit 1)
+die() {
+    echo "ERROR: ${1}" >&2
+    exit 1
+}
+
+# Default to debug, search for release
+debug="./target/debug/clevis-pin-tpm2"
+release="./target/release/clevis-pin-tpm2"
+if [[ -f "${debug}" ]]; then
+    bin="${debug}"
+elif [[ -f "${release}" ]]; then
+    bin="${release}"
+else
+    die "No binary found. Run cargo build first"
+fi
+
 (
 	cd ../clevis-pin-tpm2-signtool
 	go build
@@ -14,11 +29,15 @@ cargo build || (echo "Failed to build"; exit 1)
 	../../clevis-pin-tpm2-signtool/clevis-pin-tpm2-signtool <policy_working.yaml >policy_working.json
 	../../clevis-pin-tpm2-signtool/clevis-pin-tpm2-signtool <policy_broken.yaml >policy_broken.json
 )
-echo "Working: with Policy" | ./target/debug/clevis-pin-tpm2 encrypt '{"use_policy": true, "policy_pubkey_path":"./tests/publickey.json", "policy_ref": "", "policy_path": "./tests/policy_working.json"}' | ./target/debug/clevis-pin-tpm2 decrypt
-echo "Working: with Policy (no use_policy)" | ./target/debug/clevis-pin-tpm2 encrypt '{"policy_pubkey_path":"./tests/publickey.json", "policy_ref": "", "policy_path": "./tests/policy_working.json"}' | ./target/debug/clevis-pin-tpm2 decrypt
+echo "Working: with Policy" \
+    | "${bin}" encrypt '{"use_policy": true, "policy_pubkey_path":"./tests/publickey.json", "policy_ref": "", "policy_path": "./tests/policy_working.json"}' \
+    | "${bin}" decrypt
+echo "Working: with Policy (no use_policy)" \
+    | "${bin}" encrypt '{"policy_pubkey_path":"./tests/publickey.json", "policy_ref": "", "policy_path": "./tests/policy_working.json"}' \
+    | "${bin}" decrypt
 # Negative test (non-valid policy)
-token=$(echo Failed | ./target/debug/clevis-pin-tpm2 encrypt '{"use_policy": true, "policy_pubkey_path":"./tests/publickey.json", "policy_ref": "", "policy_path": "./tests/policy_broken.json"}')
-res=$(echo "$token" | ./target/debug/clevis-pin-tpm2 decrypt 2>&1)
+token=$(echo Failed | "${bin}" encrypt '{"use_policy": true, "policy_pubkey_path":"./tests/publickey.json", "policy_ref": "", "policy_path": "./tests/policy_broken.json"}')
+res=$(echo "$token" | "${bin}" decrypt 2>&1)
 ret=$?
 if [ $ret == 0 -a "$res" == "Failed" ]
 then
