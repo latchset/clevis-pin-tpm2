@@ -12,6 +12,7 @@ use tpm2_policy::TPMPolicyStep;
 use crate::utils::get_authorized_policy_step;
 
 #[derive(Serialize, Deserialize, std::fmt::Debug)]
+#[serde(deny_unknown_fields)]
 pub(super) struct TPM2Config {
     pub hash: Option<String>,
     pub key: Option<String>,
@@ -239,4 +240,40 @@ pub(super) fn get_mode_and_cfg(args: &[String]) -> Result<(ActionMode, Option<TP
     };
 
     Ok((mode, cfg))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_valid_config_parsing() {
+        let config_str = r#"{"pcr_ids": "7"}"#;
+        let result = serde_json::from_str::<TPM2Config>(config_str);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_invalid_field_name_rejected() {
+        // Using "pcrs_ids" instead of "pcr_ids" should fail
+        let config_str = r#"{"pcrs_ids": "7"}"#;
+        let result = serde_json::from_str::<TPM2Config>(config_str);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("unknown field"));
+    }
+
+    #[test]
+    fn test_multiple_invalid_fields_rejected() {
+        let config_str = r#"{"invalid_field": "value", "another_invalid": "value2"}"#;
+        let result = serde_json::from_str::<TPM2Config>(config_str);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_valid_complex_config() {
+        let config_str = r#"{"pcr_ids": [7, 11], "pcr_bank": "sha256", "hash": "sha256"}"#;
+        let result = serde_json::from_str::<TPM2Config>(config_str);
+        assert!(result.is_ok());
+    }
 }
