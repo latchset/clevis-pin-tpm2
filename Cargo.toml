@@ -4,7 +4,7 @@
 
 [package]
 name = "clevis-pin-tpm2"
-version = "0.5.3"
+version = "0.5.4"
 description = "Clevis TPM2 PIN with policy support"
 authors = ["Patrick Uiterwijk <patrick@puiterwijk.org>"]
 edition = "2018"
