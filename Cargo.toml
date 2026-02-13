@@ -18,7 +18,7 @@ rust-version = "1.90.0"
 anyhow = "1"
 tss-esapi = { version = "7.5", features = ["generate-bindings"] }
 serde = "1.0"
-josekit = "0.7.4"
+josekit = "0.10.3"
 serde_json = "1.0"
 base64 = "0.22.0"
 tpm2-policy = "0.6.0"
