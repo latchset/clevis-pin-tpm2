@@ -8,16 +8,95 @@ use std::env;
 use std::io::{self, Read, Write};
 
 use anyhow::{bail, Context, Error, Result};
+use base64::Engine;
 use josekit::jwe::{alg::direct::DirectJweAlgorithm::Dir, enc::A256GCM};
 use serde::{Deserialize, Serialize};
 use tpm2_policy::TPMPolicyStep;
-use tss_esapi::structures::SensitiveData;
+use tss_esapi::interface_types::algorithm::HashingAlgorithm;
+use tss_esapi::interface_types::resource_handles::Hierarchy;
+use tss_esapi::interface_types::session_handles::AuthSession;
+use tss_esapi::structures::{MaxBuffer, PcrSelectionListBuilder, PcrSlot, SensitiveData};
 
 mod cli;
 mod tpm_objects;
 mod utils;
 
 use cli::TPM2Config;
+
+/// Compute a policy digest using caller-supplied PCR values instead of
+/// reading them from the TPM. This is a workaround until tpm2-policy
+/// supports pcr_digest natively.
+///
+/// The pcr_digest is the base64url-no-padding encoding of the concatenated
+/// raw PCR values (same format as tpm2_pcrread -o output / jose b64 enc).
+fn compute_policy_digest_with_pcr_digest(
+    ctx: &mut tss_esapi::Context,
+    pcr_digest_b64: &str,
+    pcr_ids: &[u64],
+    pcr_hash_alg: HashingAlgorithm,
+    name_hash_alg: HashingAlgorithm,
+) -> Result<(Option<AuthSession>, Option<tss_esapi::structures::Digest>)> {
+    use tss_esapi::constants::SessionType;
+    use tss_esapi::structures::SymmetricDefinition;
+
+    // Decode the base64url-no-padding pcr_digest
+    let concatenated_pcr_values = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(pcr_digest_b64)
+        .context("Error decoding pcr_digest base64")?;
+    let concatenated_pcr_values = MaxBuffer::try_from(concatenated_pcr_values)
+        .context("Error converting pcr_digest to MaxBuffer")?;
+
+    // Build PCR selection
+    // PcrSlot values are bitmask positions (Slot7 = 0x80 = 1 << 7),
+    // so we need to convert PCR IDs to bitmask form.
+    let pcr_slots: Result<Vec<PcrSlot>> = pcr_ids
+        .iter()
+        .map(|id| {
+            if *id > 23 {
+                anyhow::bail!("PCR ID {} out of valid range (0-23)", id);
+            }
+            let bitmask = 1u32 << (*id as u32);
+            PcrSlot::try_from(bitmask).map_err(|e| anyhow::anyhow!("Invalid PCR ID {}: {}", id, e))
+        })
+        .collect();
+    let pcr_sel = PcrSelectionListBuilder::new()
+        .with_selection(pcr_hash_alg, &pcr_slots?)
+        .build()
+        .context("Error building PCR selection")?;
+
+    // Hash the concatenated PCR values
+    let (hashed_data, _ticket) = ctx.execute_without_session(|context| {
+        context.hash(
+            concatenated_pcr_values,
+            HashingAlgorithm::Sha256,
+            Hierarchy::Owner,
+        )
+    })?;
+
+    // Create a trial policy session
+    let trial_session = ctx
+        .start_auth_session(
+            None,
+            None,
+            None,
+            SessionType::Trial,
+            SymmetricDefinition::AES_128_CFB,
+            name_hash_alg,
+        )?
+        .ok_or_else(|| anyhow::anyhow!("Failed to create trial session"))?;
+
+    // Apply the PCR policy and retrieve the digest. The closure ensures
+    // the trial session is always flushed, even on error.
+    let result = (|| -> Result<tss_esapi::structures::Digest> {
+        ctx.policy_pcr(trial_session.try_into()?, hashed_data, pcr_sel)?;
+        Ok(ctx.policy_get_digest(trial_session.try_into()?)?)
+    })();
+
+    let session_handle: tss_esapi::handles::SessionHandle = trial_session.into();
+    let _ = ctx.flush_context(session_handle.into());
+
+    Ok((None, Some(result?)))
+}
 
 fn perform_encrypt(cfg: TPM2Config, input: Vec<u8>) -> Result<()> {
     let key_type = match &cfg.key {
@@ -37,7 +116,22 @@ fn perform_encrypt(cfg: TPM2Config, input: Vec<u8>) -> Result<()> {
         _ => "tpm2plus",
     };
 
-    let (_, policy_digest) = policy_runner.send_policy(&mut ctx, true)?;
+    // If pcr_digest is provided, bypass tpm2-policy's PCR reading and
+    // manually construct the trial policy with the caller-supplied digest.
+    // This enables sealing to predicted/future PCR values.
+    let (_, policy_digest) = if let (Some(ref pcr_digest_b64), Some(ref pcr_ids)) =
+        (&cfg.pcr_digest, &cfg.get_pcr_ids())
+    {
+        compute_policy_digest_with_pcr_digest(
+            &mut ctx,
+            pcr_digest_b64,
+            pcr_ids,
+            cfg.get_pcr_hash_alg(),
+            cfg.get_name_hash_alg(),
+        )?
+    } else {
+        policy_runner.send_policy(&mut ctx, true)?
+    };
 
     let mut jwk = josekit::jwk::Jwk::generate_oct_key(32).context("Error generating random JWK")?;
     jwk.set_key_operations(vec!["encrypt", "decrypt"]);
@@ -240,6 +334,10 @@ This command uses the following configuration properties:
   pcr_bank: <string>  PCR algorithm bank to use for policy (default: sha256)
 
   pcr_ids: <string>  PCR list used for policy. If not present, no PCR policy is used
+
+  pcr_digest: <string>  base64url-no-pad encoded concatenation of PCR values to seal
+                        against, in ascending PCR index order. Requires pcr_ids. When
+                        provided, uses the given values instead of reading live PCR state
 
   use_policy: <bool>  Whether to use a policy
 
