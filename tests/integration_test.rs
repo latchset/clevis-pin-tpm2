@@ -5,6 +5,7 @@
 use std::{io::Write, os::unix::process::CommandExt, process::Command};
 
 use anyhow::{bail, Context, Result};
+use base64::Engine;
 
 type CheckFunction = dyn Fn(&str) -> Result<()>;
 struct EncryptFunc {
@@ -20,6 +21,10 @@ struct DecryptFunc {
 
 const EXENAME: &str = env!("CARGO_BIN_EXE_clevis-pin-tpm2");
 
+// An arbitrary non-zero 32-byte value that will not match PCR 23's
+// initial all-zeros state. The specific byte values do not matter.
+const PCR23_SHA256_WRONG_DIGEST: &str = "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE";
+
 const CONFIG_STRINGS: &[(&str, &CheckFunction)] = &[
     // No sealing
     (r#"{}"#, &always_success),
@@ -31,10 +36,37 @@ const CONFIG_STRINGS: &[(&str, &CheckFunction)] = &[
     (r#"{"pcr_ids": [23]}"#, &always_success),
     // sealed against SHA1 PCR23
     (r#"{"pcr_bank": "sha1", "pcr_ids": [23]}"#, &always_success),
+    // Sealed against PCR23 with caller-supplied pcr_digest matching swtpm state
+    (
+        r#"{"pcr_ids": [23], "pcr_digest": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}"#,
+        &check_no_pcr_digest_in_token,
+    ),
 ];
 
 // Check functions
 fn always_success(_token: &str) -> Result<()> {
+    Ok(())
+}
+
+// Regression guard: verify pcr_digest is not persisted in the JWE token.
+fn check_no_pcr_digest_in_token(token: &str) -> Result<()> {
+    let parts: Vec<&str> = token.trim().split('.').collect();
+    if parts.len() != 5 {
+        bail!("JWE token does not have 5 parts (got {})", parts.len());
+    }
+    let header_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(parts[0])
+        .context("Failed to decode JWE protected header")?;
+    let header: serde_json::Value =
+        serde_json::from_slice(&header_bytes).context("Failed to parse JWE header as JSON")?;
+    if let Some(tpm2) = header.get("clevis").and_then(|c| c.get("tpm2")) {
+        if tpm2.get("pcr_digest").is_some() {
+            bail!("pcr_digest was leaked into the JWE token header");
+        }
+    }
+    if header.get("pcr_digest").is_some() {
+        bail!("pcr_digest was leaked into the top-level JWE header");
+    }
     Ok(())
 }
 
@@ -193,4 +225,35 @@ fn pcr_tests() {
     if failed != 0 {
         panic!("{} tests failed", failed);
     }
+
+    // Negative test: sealing with a pcr_digest that does not match the
+    // live PCR values must encrypt successfully but fail to decrypt (the
+    // TPM refuses to unseal). This is the primary regression guard against
+    // the original bug where pcr_digest was silently ignored.
+    let mismatch_config = format!(
+        r#"{{"pcr_ids": [23], "pcr_digest": "{}"}}"#,
+        PCR23_SHA256_WRONG_DIGEST
+    );
+    let encrypt_fn = generate_encrypt_us(false);
+    let decrypt_fn = generate_decrypt_us(false);
+
+    eprintln!("pcr_digest_mismatch: encrypting with non-matching digest");
+    let encrypted = (encrypt_fn.func)(INPUT, &mismatch_config)
+        .expect("encrypt with mismatched pcr_digest should succeed");
+
+    let parts: Vec<&str> = encrypted.trim().split('.').collect();
+    assert_eq!(
+        parts.len(),
+        5,
+        "encrypted output is not a valid JWE (expected 5 parts, got {})",
+        parts.len()
+    );
+
+    eprintln!("pcr_digest_mismatch: decrypting (should fail)");
+    let result = (decrypt_fn.func)(&encrypted);
+    assert!(
+        result.is_err(),
+        "decrypt should fail when pcr_digest does not match live PCR values"
+    );
+    eprintln!("pcr_digest_mismatch: PASSED");
 }
