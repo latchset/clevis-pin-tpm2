@@ -25,6 +25,10 @@ const EXENAME: &str = env!("CARGO_BIN_EXE_clevis-pin-tpm2");
 // initial all-zeros state. The specific byte values do not matter.
 const PCR23_SHA256_WRONG_DIGEST: &str = "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE";
 
+// An arbitrary non-zero 64-byte value for multi-PCR mismatch testing.
+const PCR16_23_SHA256_WRONG_DIGEST: &str =
+    "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ";
+
 const CONFIG_STRINGS: &[(&str, &CheckFunction)] = &[
     // No sealing
     (r#"{}"#, &always_success),
@@ -39,6 +43,16 @@ const CONFIG_STRINGS: &[(&str, &CheckFunction)] = &[
     // Sealed against PCR23 with caller-supplied pcr_digest matching swtpm state
     (
         r#"{"pcr_ids": [23], "pcr_digest": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}"#,
+        &check_no_pcr_digest_in_token,
+    ),
+    // Multi-PCR: sealed against PCR 16+23 with caller-supplied pcr_digest
+    (
+        r#"{"pcr_ids": [16, 23], "pcr_digest": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}"#,
+        &check_no_pcr_digest_in_token,
+    ),
+    // SHA-1 bank: sealed against PCR 23 with caller-supplied pcr_digest
+    (
+        r#"{"pcr_bank": "sha1", "pcr_ids": [23], "pcr_digest": "AAAAAAAAAAAAAAAAAAAAAAAAAAA"}"#,
         &check_no_pcr_digest_in_token,
     ),
 ];
@@ -230,30 +244,46 @@ fn pcr_tests() {
     // live PCR values must encrypt successfully but fail to decrypt (the
     // TPM refuses to unseal). This is the primary regression guard against
     // the original bug where pcr_digest was silently ignored.
-    let mismatch_config = format!(
-        r#"{{"pcr_ids": [23], "pcr_digest": "{}"}}"#,
-        PCR23_SHA256_WRONG_DIGEST
-    );
+    let mismatch_cases: &[(&str, &str)] = &[
+        (
+            &format!(
+                r#"{{"pcr_ids": [23], "pcr_digest": "{}"}}"#,
+                PCR23_SHA256_WRONG_DIGEST
+            ),
+            "single-PCR",
+        ),
+        (
+            &format!(
+                r#"{{"pcr_ids": [16, 23], "pcr_digest": "{}"}}"#,
+                PCR16_23_SHA256_WRONG_DIGEST
+            ),
+            "multi-PCR",
+        ),
+    ];
+
     let encrypt_fn = generate_encrypt_us(false);
     let decrypt_fn = generate_decrypt_us(false);
 
-    eprintln!("pcr_digest_mismatch: encrypting with non-matching digest");
-    let encrypted = (encrypt_fn.func)(INPUT, &mismatch_config)
-        .expect("encrypt with mismatched pcr_digest should succeed");
+    for (config, label) in mismatch_cases {
+        eprintln!("pcr_digest_mismatch ({label}): encrypting with non-matching digest");
+        let encrypted = (encrypt_fn.func)(INPUT, config)
+            .expect("encrypt with mismatched pcr_digest should succeed");
 
-    let parts: Vec<&str> = encrypted.trim().split('.').collect();
-    assert_eq!(
-        parts.len(),
-        5,
-        "encrypted output is not a valid JWE (expected 5 parts, got {})",
-        parts.len()
-    );
+        let parts: Vec<&str> = encrypted.trim().split('.').collect();
+        assert_eq!(
+            parts.len(),
+            5,
+            "encrypted output is not a valid JWE (expected 5 parts, got {})",
+            parts.len()
+        );
 
-    eprintln!("pcr_digest_mismatch: decrypting (should fail)");
-    let result = (decrypt_fn.func)(&encrypted);
-    assert!(
-        result.is_err(),
-        "decrypt should fail when pcr_digest does not match live PCR values"
-    );
-    eprintln!("pcr_digest_mismatch: PASSED");
+        eprintln!("pcr_digest_mismatch ({label}): decrypting (should fail)");
+        let result = (decrypt_fn.func)(&encrypted);
+        assert!(
+            result.is_err(),
+            "decrypt should fail when pcr_digest does not match live PCR values ({})",
+            label
+        );
+        eprintln!("pcr_digest_mismatch ({label}): PASSED");
+    }
 }
