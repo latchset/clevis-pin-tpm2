@@ -64,13 +64,11 @@ fn compute_policy_digest_with_pcr_digest(
         .build()
         .context("Error building PCR selection")?;
 
-    // Hash the concatenated PCR values
+    // Hash the concatenated PCR values using the session hash algorithm
+    // (per TPM 2.0 Part 3, Section 23.7: pcrDigest uses the session hash,
+    // not the PCR bank hash).
     let (hashed_data, _ticket) = ctx.execute_without_session(|context| {
-        context.hash(
-            concatenated_pcr_values,
-            HashingAlgorithm::Sha256,
-            Hierarchy::Owner,
-        )
+        context.hash(concatenated_pcr_values, name_hash_alg, Hierarchy::Owner)
     })?;
 
     // Create a trial policy session
