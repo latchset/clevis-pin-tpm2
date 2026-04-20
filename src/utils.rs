@@ -66,6 +66,16 @@ pub(crate) fn get_hash_alg_from_name(name: Option<&String>) -> Result<HashingAlg
     }
 }
 
+pub(crate) fn hash_digest_size(name: Option<&String>) -> Result<usize> {
+    match get_hash_alg_from_name(name)? {
+        HashingAlgorithm::Sha1 => Ok(20),
+        HashingAlgorithm::Sha256 => Ok(32),
+        HashingAlgorithm::Sha384 => Ok(48),
+        HashingAlgorithm::Sha512 => Ok(64),
+        _ => bail!("Unsupported hash algorithm"),
+    }
+}
+
 pub(crate) fn serialize_as_base64_url_no_pad<S>(
     bytes: &[u8],
     serializer: S,
