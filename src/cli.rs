@@ -126,6 +126,9 @@ impl TPM2Config {
         {
             eprintln!("To use a policy, please specifiy use_policy: true. Not specifying this will be a fatal error in a next release");
         }
+        if self.pcr_digest.is_some() && self.policy_pubkey_path.is_some() {
+            bail!("pcr_digest cannot be combined with authorized policy");
+        }
         if (self.policy_pubkey_path.is_some()
             || self.policy_path.is_some()
             || self.policy_ref.is_some())
@@ -270,5 +273,16 @@ mod tests {
         let config_str = r#"{"pcr_ids": [7, 11], "pcr_bank": "sha256", "hash": "sha256"}"#;
         let result = serde_json::from_str::<TPM2Config>(config_str);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_pcr_digest_with_policy_rejected() {
+        let config_str = r#"{"pcr_ids": [23], "pcr_digest": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "use_policy": true}"#;
+        let result = serde_json::from_str::<TPM2Config>(config_str)
+            .unwrap()
+            .normalize();
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("pcr_digest cannot be combined"));
     }
 }
