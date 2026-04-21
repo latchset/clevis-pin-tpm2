@@ -214,14 +214,21 @@ struct Tpm2Inner {
 }
 
 impl Tpm2Inner {
-    fn get_pcr_ids(&self) -> Option<Vec<u64>> {
-        Some(
-            self.pcr_ids
-                .as_ref()?
-                .split(',')
-                .map(|x| x.parse::<u64>().unwrap())
-                .collect(),
-        )
+    fn get_pcr_ids(&self) -> Result<Option<Vec<u64>>> {
+        match &self.pcr_ids {
+            None => Ok(None),
+            Some(ids) => {
+                let parsed: Result<Vec<u64>> = ids
+                    .split(',')
+                    .map(|x| {
+                        x.trim()
+                            .parse::<u64>()
+                            .map_err(|e| anyhow::anyhow!("Invalid PCR ID '{}': {}", x, e))
+                    })
+                    .collect();
+                Ok(Some(parsed?))
+            }
+        }
     }
 }
 
@@ -233,7 +240,7 @@ impl TryFrom<&Tpm2Inner> for TPMPolicyStep {
             (Some(_), Some(pubkey_path)) => Ok(TPMPolicyStep::Or([
                 Box::new(TPMPolicyStep::PCRs(
                     utils::get_hash_alg_from_name(cfg.pcr_bank.as_ref())?,
-                    cfg.get_pcr_ids().unwrap(),
+                    cfg.get_pcr_ids()?.ok_or_else(|| anyhow::anyhow!("pcr_ids unexpectedly empty"))?,
                     Box::new(TPMPolicyStep::NoStep),
                 )),
                 Box::new(utils::get_authorized_policy_step(
@@ -250,7 +257,7 @@ impl TryFrom<&Tpm2Inner> for TPMPolicyStep {
             ])),
             (Some(_), None) => Ok(TPMPolicyStep::PCRs(
                 utils::get_hash_alg_from_name(cfg.pcr_bank.as_ref())?,
-                cfg.get_pcr_ids().unwrap(),
+                cfg.get_pcr_ids()?.ok_or_else(|| anyhow::anyhow!("pcr_ids unexpectedly empty"))?,
                 Box::new(TPMPolicyStep::NoStep),
             )),
             (None, Some(pubkey_path)) => {
