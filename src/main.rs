@@ -101,7 +101,8 @@ fn perform_encrypt(cfg: TPM2Config, input: Vec<u8>) -> Result<()> {
         None => "ecc",
         Some(key_type) => key_type,
     };
-    let key_public = tpm_objects::get_key_public(key_type, cfg.get_name_hash_alg()?)?;
+    let name_hash_alg = cfg.get_name_hash_alg()?;
+    let key_public = tpm_objects::get_key_public(key_type, name_hash_alg)?;
 
     let mut ctx = utils::get_tpm2_ctx()?;
     let key_handle = utils::get_tpm2_primary_key(&mut ctx, key_public)?;
@@ -120,12 +121,13 @@ fn perform_encrypt(cfg: TPM2Config, input: Vec<u8>) -> Result<()> {
     let (_, policy_digest) = if let (Some(ref pcr_digest_b64), Some(ref pcr_ids)) =
         (&cfg.pcr_digest, &cfg.get_pcr_ids())
     {
+        let pcr_hash_alg = cfg.get_pcr_hash_alg()?;
         compute_policy_digest_with_pcr_digest(
             &mut ctx,
             pcr_digest_b64,
             pcr_ids,
-            cfg.get_pcr_hash_alg()?,
-            cfg.get_name_hash_alg()?,
+            pcr_hash_alg,
+            name_hash_alg,
         )?
     } else {
         policy_runner.send_policy(&mut ctx, true)?
@@ -135,7 +137,8 @@ fn perform_encrypt(cfg: TPM2Config, input: Vec<u8>) -> Result<()> {
     jwk.set_key_operations(vec!["encrypt", "decrypt"]);
     let jwk_str = serde_json::to_string(&jwk.as_ref())?;
 
-    let public = tpm_objects::create_tpm2b_public_sealed_object(policy_digest)?.try_into()?;
+    let public =
+        tpm_objects::create_tpm2b_public_sealed_object(policy_digest, name_hash_alg)?.try_into()?;
     let jwk_str = SensitiveData::try_from(jwk_str.as_bytes().to_vec())?;
     let jwk_result = ctx.execute_with_nullauth_session(|ctx| {
         ctx.create(key_handle, public, None, Some(jwk_str), None, None)
