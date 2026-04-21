@@ -65,7 +65,15 @@ pub(super) fn get_key_public(key_type: &str, name_alg: HashingAlgorithm) -> Resu
 
 pub(super) fn create_tpm2b_public_sealed_object(
     policy: Option<Digest>,
+    name_hash_alg: HashingAlgorithm,
 ) -> Result<tss_esapi::tss2_esys::TPM2B_PUBLIC> {
+    let name_alg = match name_hash_alg {
+        HashingAlgorithm::Sha1 => tss_constants::TPM2_ALG_SHA1,
+        HashingAlgorithm::Sha256 => tss_constants::TPM2_ALG_SHA256,
+        HashingAlgorithm::Sha384 => tss_constants::TPM2_ALG_SHA384,
+        HashingAlgorithm::Sha512 => tss_constants::TPM2_ALG_SHA512,
+        _ => bail!("Unsupported hash algorithm for sealed object"),
+    };
     let mut object_attributes = ObjectAttributesBuilder::new()
         .with_fixed_tpm(true)
         .with_fixed_parent(true)
@@ -87,7 +95,7 @@ pub(super) fn create_tpm2b_public_sealed_object(
         size: std::mem::size_of::<tss_esapi::tss2_esys::TPMT_PUBLIC>() as u16,
         publicArea: tss_esapi::tss2_esys::TPMT_PUBLIC {
             type_: tss_constants::TPM2_ALG_KEYEDHASH,
-            nameAlg: tss_constants::TPM2_ALG_SHA256,
+            nameAlg: name_alg,
             objectAttributes: object_attributes.build()?.0,
             authPolicy: tss_esapi::tss2_esys::TPM2B_DIGEST::from(policy),
             parameters: params,
@@ -172,4 +180,21 @@ pub(super) fn build_tpm2b_public(val: &[u8]) -> Result<tss_esapi::tss2_esys::TPM
     }
 
     Ok(resp)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sealed_object_uses_provided_hash_alg() {
+        let result = create_tpm2b_public_sealed_object(None, HashingAlgorithm::Sha384).unwrap();
+        assert_eq!(result.publicArea.nameAlg, tss_constants::TPM2_ALG_SHA384);
+    }
+
+    #[test]
+    fn test_sealed_object_default_sha256() {
+        let result = create_tpm2b_public_sealed_object(None, HashingAlgorithm::Sha256).unwrap();
+        assert_eq!(result.publicArea.nameAlg, tss_constants::TPM2_ALG_SHA256);
+    }
 }
