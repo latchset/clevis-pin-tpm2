@@ -35,7 +35,7 @@ impl TryFrom<&TPM2Config> for TPMPolicyStep {
         match (&cfg.pcr_ids, &cfg.policy_pubkey_path) {
             (Some(_), Some(pubkey_path)) => Ok(TPMPolicyStep::Or([
                 Box::new(TPMPolicyStep::PCRs(
-                    cfg.get_pcr_hash_alg(),
+                    cfg.get_pcr_hash_alg()?,
                     cfg.get_pcr_ids().unwrap(),
                     Box::new(TPMPolicyStep::NoStep),
                 )),
@@ -52,7 +52,7 @@ impl TryFrom<&TPM2Config> for TPMPolicyStep {
                 Box::new(TPMPolicyStep::NoStep),
             ])),
             (Some(_), None) => Ok(TPMPolicyStep::PCRs(
-                cfg.get_pcr_hash_alg(),
+                cfg.get_pcr_hash_alg()?,
                 cfg.get_pcr_ids().unwrap(),
                 Box::new(TPMPolicyStep::NoStep),
             )),
@@ -71,13 +71,13 @@ pub(crate) const DEFAULT_POLICY_REF: &str = "";
 impl TPM2Config {
     pub(super) fn get_pcr_hash_alg(
         &self,
-    ) -> tss_esapi::interface_types::algorithm::HashingAlgorithm {
+    ) -> anyhow::Result<tss_esapi::interface_types::algorithm::HashingAlgorithm> {
         crate::utils::get_hash_alg_from_name(self.pcr_bank.as_ref())
     }
 
     pub(super) fn get_name_hash_alg(
         &self,
-    ) -> tss_esapi::interface_types::algorithm::HashingAlgorithm {
+    ) -> anyhow::Result<tss_esapi::interface_types::algorithm::HashingAlgorithm> {
         crate::utils::get_hash_alg_from_name(self.hash.as_ref())
     }
 
@@ -285,4 +285,5 @@ mod tests {
         let err = result.unwrap_err();
         assert!(err.to_string().contains("pcr_digest cannot be combined"));
     }
+
 }

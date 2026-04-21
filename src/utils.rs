@@ -6,7 +6,7 @@ use std::env;
 use std::fs;
 use std::str::FromStr;
 
-use anyhow::{Context as anyhow_context, Result};
+use anyhow::{bail, Context as anyhow_context, Result};
 use base64::Engine;
 use serde::Deserialize;
 use tpm2_policy::{PublicKey, SignedPolicyList, TPMPolicyStep};
@@ -53,15 +53,15 @@ pub(crate) fn get_authorized_policy_step(
     })
 }
 
-pub(crate) fn get_hash_alg_from_name(name: Option<&String>) -> HashingAlgorithm {
+pub(crate) fn get_hash_alg_from_name(name: Option<&String>) -> Result<HashingAlgorithm> {
     match name {
-        None => HashingAlgorithm::Sha256,
+        None => Ok(HashingAlgorithm::Sha256),
         Some(val) => match val.to_lowercase().as_str() {
-            "sha1" => HashingAlgorithm::Sha1,
-            "sha256" => HashingAlgorithm::Sha256,
-            "sha384" => HashingAlgorithm::Sha384,
-            "sha512" => HashingAlgorithm::Sha512,
-            _ => panic!("Unsupported hash algo: {:?}", name),
+            "sha1" => Ok(HashingAlgorithm::Sha1),
+            "sha256" => Ok(HashingAlgorithm::Sha256),
+            "sha384" => Ok(HashingAlgorithm::Sha384),
+            "sha512" => Ok(HashingAlgorithm::Sha512),
+            _ => bail!("Unsupported hash algorithm: {:?}", name),
         },
     }
 }
