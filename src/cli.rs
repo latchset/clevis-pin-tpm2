@@ -32,15 +32,15 @@ impl TryFrom<&TPM2Config> for TPMPolicyStep {
     type Error = Error;
 
     fn try_from(cfg: &TPM2Config) -> Result<Self> {
-        if cfg.pcr_ids.is_some() && cfg.policy_pubkey_path.is_some() {
-            Ok(TPMPolicyStep::Or([
+        match (&cfg.pcr_ids, &cfg.policy_pubkey_path) {
+            (Some(_), Some(pubkey_path)) => Ok(TPMPolicyStep::Or([
                 Box::new(TPMPolicyStep::PCRs(
                     cfg.get_pcr_hash_alg(),
                     cfg.get_pcr_ids().unwrap(),
                     Box::new(TPMPolicyStep::NoStep),
                 )),
                 Box::new(get_authorized_policy_step(
-                    cfg.policy_pubkey_path.as_ref().unwrap(),
+                    pubkey_path,
                     &None,
                     &cfg.policy_ref,
                 )?),
@@ -50,21 +50,18 @@ impl TryFrom<&TPM2Config> for TPMPolicyStep {
                 Box::new(TPMPolicyStep::NoStep),
                 Box::new(TPMPolicyStep::NoStep),
                 Box::new(TPMPolicyStep::NoStep),
-            ]))
-        } else if cfg.pcr_ids.is_some() {
-            Ok(TPMPolicyStep::PCRs(
+            ])),
+            (Some(_), None) => Ok(TPMPolicyStep::PCRs(
                 cfg.get_pcr_hash_alg(),
                 cfg.get_pcr_ids().unwrap(),
                 Box::new(TPMPolicyStep::NoStep),
-            ))
-        } else if cfg.policy_pubkey_path.is_some() {
-            get_authorized_policy_step(
-                cfg.policy_pubkey_path.as_ref().unwrap(),
+            )),
+            (None, Some(pubkey_path)) => get_authorized_policy_step(
+                pubkey_path,
                 &None,
                 &cfg.policy_ref,
-            )
-        } else {
-            Ok(TPMPolicyStep::NoStep)
+            ),
+            (None, None) => Ok(TPMPolicyStep::NoStep),
         }
     }
 }

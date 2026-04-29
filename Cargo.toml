@@ -16,7 +16,7 @@ rust-version = "1.90.0"
 
 [dependencies]
 anyhow = "1"
-tss-esapi = { version = "7.5", features = ["generate-bindings"] }
+tss-esapi = { version = "7.7", features = ["generate-bindings"] }
 serde = "1.0"
 josekit = "0.7.4"
 serde_json = "1.0"
