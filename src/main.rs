@@ -158,11 +158,9 @@ impl TryFrom<&Tpm2Inner> for TPMPolicyStep {
                 cfg.get_pcr_ids().unwrap(),
                 Box::new(TPMPolicyStep::NoStep),
             )),
-            (None, Some(pubkey_path)) => utils::get_authorized_policy_step(
-                pubkey_path,
-                &cfg.policy_path,
-                &cfg.policy_ref,
-            ),
+            (None, Some(pubkey_path)) => {
+                utils::get_authorized_policy_step(pubkey_path, &cfg.policy_path, &cfg.policy_ref)
+            }
             (None, None) => Ok(TPMPolicyStep::NoStep),
         }
     }
