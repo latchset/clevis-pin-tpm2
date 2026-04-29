@@ -37,7 +37,8 @@ impl TryFrom<&TPM2Config> for TPMPolicyStep {
             (Some(_), Some(pubkey_path)) => Ok(TPMPolicyStep::Or([
                 Box::new(TPMPolicyStep::PCRs(
                     cfg.get_pcr_hash_alg()?,
-                    cfg.get_pcr_ids().unwrap(),
+                    cfg.get_pcr_ids()?
+                        .ok_or_else(|| anyhow!("pcr_ids unexpectedly empty"))?,
                     Box::new(TPMPolicyStep::NoStep),
                 )),
                 Box::new(get_authorized_policy_step(
@@ -54,7 +55,8 @@ impl TryFrom<&TPM2Config> for TPMPolicyStep {
             ])),
             (Some(_), None) => Ok(TPMPolicyStep::PCRs(
                 cfg.get_pcr_hash_alg()?,
-                cfg.get_pcr_ids().unwrap(),
+                cfg.get_pcr_ids()?
+                    .ok_or_else(|| anyhow!("pcr_ids unexpectedly empty"))?,
                 Box::new(TPMPolicyStep::NoStep),
             )),
             (None, Some(pubkey_path)) => {
@@ -82,26 +84,38 @@ impl TPM2Config {
         crate::utils::get_hash_alg_from_name(self.hash.as_ref())
     }
 
-    pub(super) fn get_pcr_ids(&self) -> Option<Vec<u64>> {
+    pub(super) fn get_pcr_ids(&self) -> Result<Option<Vec<u64>>> {
         match &self.pcr_ids {
-            None => None,
+            None => Ok(None),
             Some(serde_json::Value::Array(vals)) => {
-                Some(vals.iter().map(|x| x.as_u64().unwrap()).collect())
+                let ids: Result<Vec<u64>> = vals
+                    .iter()
+                    .map(|x| {
+                        x.as_u64()
+                            .ok_or_else(|| anyhow!("non-u64 value in pcr_ids"))
+                    })
+                    .collect();
+                Ok(Some(ids?))
             }
-            _ => panic!("Unexpected type found for pcr_ids"),
+            _ => bail!("Unexpected type found for pcr_ids"),
         }
     }
 
-    pub(super) fn get_pcr_ids_str(&self) -> Option<String> {
+    pub(super) fn get_pcr_ids_str(&self) -> Result<Option<String>> {
         match &self.pcr_ids {
-            None => None,
-            Some(serde_json::Value::Array(vals)) => Some(
-                vals.iter()
-                    .map(|x| x.as_u64().unwrap().to_string())
-                    .collect::<Vec<String>>()
-                    .join(","),
-            ),
-            _ => panic!("Unexpected type found for pcr_ids"),
+            None => Ok(None),
+            Some(serde_json::Value::Array(vals)) => {
+                let strs: Result<Vec<String>> = vals
+                    .iter()
+                    .map(|x| {
+                        x.as_u64()
+                            .map(|v| v.to_string())
+                            .ok_or_else(|| anyhow!("non-u64 value in pcr_ids"))
+                    })
+                    .collect();
+                Ok(Some(strs?.join(",")))
+            }
+            _ => bail!("Unexpected type found for pcr_ids"),
         }
     }
 
@@ -493,7 +507,7 @@ mod tests {
             .unwrap()
             .normalize()
             .unwrap();
-        let ids = cfg.get_pcr_ids().unwrap();
+        let ids = cfg.get_pcr_ids().unwrap().unwrap();
         assert_eq!(ids, vec![0, 7, 23]);
     }
 }

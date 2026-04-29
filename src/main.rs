@@ -119,7 +119,7 @@ fn perform_encrypt(cfg: TPM2Config, input: Vec<u8>) -> Result<()> {
     // manually construct the trial policy with the caller-supplied digest.
     // This enables sealing to predicted/future PCR values.
     let (_, policy_digest) = if let (Some(ref pcr_digest_b64), Some(ref pcr_ids)) =
-        (&cfg.pcr_digest, &cfg.get_pcr_ids())
+        (&cfg.pcr_digest, &cfg.get_pcr_ids()?)
     {
         let pcr_hash_alg = cfg.get_pcr_hash_alg()?;
         compute_policy_digest_with_pcr_digest(
@@ -156,7 +156,7 @@ fn perform_encrypt(cfg: TPM2Config, input: Vec<u8>) -> Result<()> {
             jwk_pub,
             jwk_priv,
             pcr_bank: cfg.pcr_bank.clone(),
-            pcr_ids: cfg.get_pcr_ids_str(),
+            pcr_ids: cfg.get_pcr_ids_str()?,
             policy_pubkey_path: cfg.policy_pubkey_path,
             policy_ref: cfg.policy_ref,
             policy_path: cfg.policy_path,
@@ -240,7 +240,8 @@ impl TryFrom<&Tpm2Inner> for TPMPolicyStep {
             (Some(_), Some(pubkey_path)) => Ok(TPMPolicyStep::Or([
                 Box::new(TPMPolicyStep::PCRs(
                     utils::get_hash_alg_from_name(cfg.pcr_bank.as_ref())?,
-                    cfg.get_pcr_ids()?.ok_or_else(|| anyhow::anyhow!("pcr_ids unexpectedly empty"))?,
+                    cfg.get_pcr_ids()?
+                        .ok_or_else(|| anyhow::anyhow!("pcr_ids unexpectedly empty"))?,
                     Box::new(TPMPolicyStep::NoStep),
                 )),
                 Box::new(utils::get_authorized_policy_step(
@@ -257,7 +258,8 @@ impl TryFrom<&Tpm2Inner> for TPMPolicyStep {
             ])),
             (Some(_), None) => Ok(TPMPolicyStep::PCRs(
                 utils::get_hash_alg_from_name(cfg.pcr_bank.as_ref())?,
-                cfg.get_pcr_ids()?.ok_or_else(|| anyhow::anyhow!("pcr_ids unexpectedly empty"))?,
+                cfg.get_pcr_ids()?
+                    .ok_or_else(|| anyhow::anyhow!("pcr_ids unexpectedly empty"))?,
                 Box::new(TPMPolicyStep::NoStep),
             )),
             (None, Some(pubkey_path)) => {
